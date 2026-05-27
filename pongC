@@ -1,0 +1,334 @@
+#include <iostream>
+#include <windows.h>
+#include <conio.h>
+#include <cstdlib>
+#include <ctime>
+
+using namespace std;
+
+const int WIDTH = 60;
+const int HEIGHT = 20;
+
+int player1X = WIDTH / 2 - 3;
+int player2X = WIDTH / 2 - 3;
+int prevPlayer1X = WIDTH / 2 - 3;
+int prevPlayer2X = WIDTH / 2 - 3;
+const int player1Y = HEIGHT - 2;
+const int player2Y = 1;
+
+float ballX = WIDTH / 2.0f;
+float ballY = HEIGHT / 2.0f;
+float ballDirX = 0.15f;
+float ballDirY = 0.15f;
+float ballAccumulatorX = 0.0f;
+float ballAccumulatorY = 0.0f;
+
+int lastDrawnX = -1;
+int lastDrawnY = -1;
+
+const int PADDLE_LENGTH = 6;
+int score1 = 0;
+int score2 = 0;
+bool needReset = false;
+int resetDirection = 1;
+
+// Флаги состояния клавиш для одновременного управления
+bool keyA = false;
+bool keyD = false;
+bool keyK = false;
+bool keyL = false;
+
+enum Color {
+    BLACK = 0, DARKBLUE = 1, DARKGREEN = 2, DARKCYAN = 3,
+    DARKRED = 4, DARKMAGENTA = 5, DARKYELLOW = 6, GRAY = 7,
+    DARKGRAY = 8, BLUE = 9, GREEN = 10, CYAN = 11,
+    RED = 12, MAGENTA = 13, YELLOW = 14, WHITE = 15
+};
+
+void setColor(Color text, Color background = BLACK) {
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), (background << 4) | text);
+}
+
+void gotoxy(int x, int y) {
+    COORD coord;
+    coord.X = x;
+    coord.Y = y;
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
+}
+
+void hideCursor() {
+    CONSOLE_CURSOR_INFO cursor;
+    cursor.bVisible = FALSE;
+    cursor.dwSize = 1;
+    SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursor);
+}
+
+void drawBorders() {
+    setColor(CYAN);
+    gotoxy(0, 0);
+    cout << char(201);
+    for (int i = 0; i < WIDTH; i++) cout << char(205);
+    cout << char(187);
+
+    for (int i = 1; i < HEIGHT + 1; i++) {
+        gotoxy(0, i);
+        cout << char(186);
+        gotoxy(WIDTH + 1, i);
+        cout << char(186);
+    }
+
+    gotoxy(0, HEIGHT + 1);
+    cout << char(200);
+    for (int i = 0; i < WIDTH; i++) cout << char(205);
+    cout << char(188);
+
+    setColor(DARKGRAY);
+    for (int i = 1; i < WIDTH + 1; i += 2) {
+        gotoxy(i, HEIGHT / 2 + 1);
+        cout << char(176);
+    }
+    setColor(GRAY);
+}
+
+void clearPaddle(int x, int y) {
+    gotoxy(x + 1, y);
+    for (int i = 0; i < PADDLE_LENGTH; i++) {
+        cout << " ";
+    }
+}
+
+void drawPaddle(int x, int y, Color color) {
+    setColor(color);
+    gotoxy(x + 1, y);
+    for (int i = 0; i < PADDLE_LENGTH; i++) {
+        cout << char(219);
+    }
+    setColor(GRAY);
+}
+
+void drawPaddles() {
+    if (prevPlayer1X != player1X) {
+        clearPaddle(prevPlayer1X, player1Y);
+        prevPlayer1X = player1X;
+    }
+    if (prevPlayer2X != player2X) {
+        clearPaddle(prevPlayer2X, player2Y);
+        prevPlayer2X = player2X;
+    }
+
+    drawPaddle(player1X, player1Y, GREEN);
+    drawPaddle(player2X, player2Y, RED);
+}
+
+void drawBall() {
+    int currentX = (int)(ballX + 0.5f);
+    int currentY = (int)(ballY + 0.5f);
+
+    if (currentX != lastDrawnX || currentY != lastDrawnY) {
+        if (lastDrawnX >= 1 && lastDrawnX <= WIDTH && lastDrawnY >= 1 && lastDrawnY <= HEIGHT) {
+            gotoxy(lastDrawnX + 1, lastDrawnY);
+            cout << " ";
+        }
+
+        if (currentX >= 1 && currentX <= WIDTH && currentY >= 1 && currentY <= HEIGHT) {
+            setColor(YELLOW);
+            gotoxy(currentX + 1, currentY);
+            cout << char(254);
+            setColor(GRAY);
+        }
+
+        lastDrawnX = currentX;
+        lastDrawnY = currentY;
+    }
+}
+
+void drawScore() {
+    gotoxy(0, HEIGHT + 3);
+    for (int i = 0; i < WIDTH + 2; i++) cout << " ";
+
+    gotoxy(WIDTH / 2 - 12, HEIGHT + 3);
+    setColor(GREEN);
+    cout << "Player 1: " << score1;
+    setColor(GRAY);
+    cout << " | ";
+    setColor(RED);
+    cout << "Player 2: " << score2;
+    setColor(GRAY);
+}
+
+void clearScreen() {
+    system("cls");
+    lastDrawnX = -1;
+    lastDrawnY = -1;
+    prevPlayer1X = player1X;
+    prevPlayer2X = player2X;
+}
+
+void resetBall(int directionY) {
+    ballX = WIDTH / 2.0f;
+    ballY = HEIGHT / 2.0f;
+    ballAccumulatorX = 0.0f;
+    ballAccumulatorY = 0.0f;
+    ballDirY = 0.15f * directionY;
+    ballDirX = (rand() % 2 == 0) ? 0.15f : -0.15f;
+
+    if (lastDrawnX >= 1 && lastDrawnX <= WIDTH && lastDrawnY >= 1 && lastDrawnY <= HEIGHT) {
+        gotoxy(lastDrawnX + 1, lastDrawnY);
+        cout << " ";
+    }
+
+    lastDrawnX = -1;
+    lastDrawnY = -1;
+    needReset = false;
+}
+
+void updateBall() {
+    ballAccumulatorX += ballDirX;
+    ballAccumulatorY += ballDirY;
+
+    while (abs(ballAccumulatorX) >= 1.0f) {
+        if (ballAccumulatorX > 0) {
+            ballX += 1.0f;
+            ballAccumulatorX -= 1.0f;
+        }
+        else {
+            ballX -= 1.0f;
+            ballAccumulatorX += 1.0f;
+        }
+    }
+
+    while (abs(ballAccumulatorY) >= 1.0f) {
+        if (ballAccumulatorY > 0) {
+            ballY += 1.0f;
+            ballAccumulatorY -= 1.0f;
+        }
+        else {
+            ballY -= 1.0f;
+            ballAccumulatorY += 1.0f;
+        }
+    }
+
+    if (ballX <= 1.0f) {
+        ballX = 1.0f;
+        ballDirX = abs(ballDirX);
+        ballAccumulatorX = 0;
+    }
+    if (ballX >= WIDTH - 1.0f) {
+        ballX = WIDTH - 1.0f;
+        ballDirX = -abs(ballDirX);
+        ballAccumulatorX = 0;
+    }
+
+    if (ballY <= player2Y + 1.0f && ballY >= player2Y - 0.5f) {
+        int ballIntX = (int)(ballX + 0.5f);
+        if (ballIntX >= player2X && ballIntX < player2X + PADDLE_LENGTH) {
+            ballY = player2Y + 1.5f;
+            ballDirY = abs(ballDirY);
+            ballAccumulatorY = 0;
+            if (rand() % 3 == 0) ballDirX = -ballDirX;
+        }
+    }
+
+    if (ballY >= player1Y - 1.0f && ballY <= player1Y + 0.5f) {
+        int ballIntX = (int)(ballX + 0.5f);
+        if (ballIntX >= player1X && ballIntX < player1X + PADDLE_LENGTH) {
+            ballY = player1Y - 1.5f;
+            ballDirY = -abs(ballDirY);
+            ballAccumulatorY = 0;
+            if (rand() % 3 == 0) ballDirX = -ballDirX;
+        }
+    }
+
+    if (ballY <= 0.0f) {
+        score1++;
+        needReset = true;
+        resetDirection = 1;
+    }
+    if (ballY >= HEIGHT + 1.0f) {
+        score2++;
+        needReset = true;
+        resetDirection = -1;
+    }
+}
+
+// Проверка состояния клавиш через GetAsyncKeyState (Windows API)
+void checkKeys() {
+    // Игрок 1 - A/D (виртуальные коды: A=0x41, D=0x44)
+    if (GetAsyncKeyState('A') & 0x8000) {
+        if (player1X > 0) {
+            prevPlayer1X = player1X;
+            player1X--;
+        }
+    }
+    if (GetAsyncKeyState('D') & 0x8000) {
+        if (player1X < WIDTH - PADDLE_LENGTH) {
+            prevPlayer1X = player1X;
+            player1X++;
+        }
+    }
+
+    // Игрок 2 - K/L (виртуальные коды: K=0x4B, L=0x4C)
+    if (GetAsyncKeyState('K') & 0x8000) {
+        if (player2X > 0) {
+            prevPlayer2X = player2X;
+            player2X--;
+        }
+    }
+    if (GetAsyncKeyState('L') & 0x8000) {
+        if (player2X < WIDTH - PADDLE_LENGTH) {
+            prevPlayer2X = player2X;
+            player2X++;
+        }
+    }
+
+    // Выход по ESC
+    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+        exit(0);
+    }
+}
+
+void draw() {
+    drawBorders();
+    drawPaddles();
+    drawBall();
+    drawScore();
+}
+
+int main() {
+    srand(time(0));
+    hideCursor();
+    system("mode con cols=80 lines=30");
+
+    setColor(YELLOW);
+    gotoxy(20, 5);
+    cout << "=== PING PONG ===";
+    setColor(GREEN);
+    gotoxy(15, 8);
+    cout << "Player 1 (Bottom): A - Left, D - Right";
+    setColor(RED);
+    gotoxy(15, 10);
+    cout << "Player 2 (Top): K - Left, L - Right";
+    setColor(GRAY);
+    gotoxy(20, 13);
+    cout << "Press any key to start...";
+    gotoxy(20, 15);
+    cout << "ESC - Exit";
+
+    _getch();
+    clearScreen();
+
+    while (true) {
+        checkKeys();  
+        updateBall();
+
+        if (needReset) {
+            Sleep(500);
+            resetBall(resetDirection);
+        }
+
+        draw();
+        Sleep(16);
+    }
+
+    return 0;
+}
